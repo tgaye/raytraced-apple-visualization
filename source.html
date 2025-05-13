@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raytraced Apple Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-width: 300px;
+            transition: all 0.3s ease;
+        }
+        #controls.hidden {
+            transform: translateX(-320px);
+        }
+        #toggleControls {
+            position: absolute;
+            left: 340px;
+            top: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+        #toggleControls.hidden {
+            left: 20px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .color-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .color-control {
+            flex: 1;
+        }
+    </style>
+
+<base target="_self">
+
+
+    <div id="controls">
+        <div class="control-group">
+            <label for="glossiness">Glossiness</label>
+            <input type="range" id="glossiness" min="0" max="1" step="0.01" value="0.5">
+        </div>
+        <div class="control-group">
+            <label for="metalness">Metalness</label>
+            <input type="range" id="metalness" min="0" max="1" step="0.01" value="0.2">
+        </div>
+        <div class="control-group">
+            <label for="roughness">Roughness</label>
+            <input type="range" id="roughness" min="0" max="1" step="0.01" value="0.3">
+        </div>
+        <div class="control-group">
+            <label>Apple Color</label>
+            <div class="color-controls">
+                <div class="color-control">
+                    <label for="red">R</label>
+                    <input type="range" id="red" min="0" max="255" value="200">
+                </div>
+                <div class="color-control">
+                    <label for="green">G</label>
+                    <input type="range" id="green" min="0" max="255" value="50">
+                </div>
+                <div class="color-control">
+                    <label for="blue">B</label>
+                    <input type="range" id="blue" min="0" max="255" value="50">
+                </div>
+            </div>
+        </div>
+        <div class="control-group">
+            <button id="randomize">Randomize</button>
+            <button id="reset">Reset</button>
+        </div>
+    </div>
+    <button id="toggleControls">☰</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script>
+        // Main variables
+        let scene, camera, renderer, apple, plane, controlsVisible = true;
+        let mouseX = 0, mouseY = 0;
+        let appleMaterial, planeMaterial;
+
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 5);
+            camera.lookAt(0, 0, 0);
+
+            // Create renderer with physically correct lighting
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.physicallyCorrectLights = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Create apple
+            createApple();
+            createPlane();
+            setupLights();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onMouseMove);
+            document.getElementById('toggleControls').addEventListener('click', toggleControls);
+            document.getElementById('randomize').addEventListener('click', randomizeSettings);
+            document.getElementById('reset').addEventListener('click', resetSettings);
+
+            // Setup UI controls
+            setupUIControls();
+
+            // Start animation loop
+            animate();
+        }
+
+        function createApple() {
+            const geometry = new THREE.SphereGeometry(1, 64, 64);
+            
+            appleMaterial = new THREE.MeshStandardMaterial({
+                color: new THREE.Color(0.8, 0.2, 0.2),
+                roughness: 0.3,
+                metalness: 0.2,
+                envMapIntensity: 0.5
+            });
+
+            apple = new THREE.Mesh(geometry, appleMaterial);
+            apple.position.y = 1;
+            apple.castShadow = true;
+            scene.add(apple);
+
+            // Add stem
+            const stemGeometry = new THREE.CylinderGeometry(0.05, 0.1, 0.5, 8);
+            const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x4a3a28 });
+            const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+            stem.position.set(0, 1.5, 0);
+            stem.rotation.x = Math.PI / 4;
+            apple.add(stem);
+        }
+
+        function createPlane() {
+            const geometry = new THREE.PlaneGeometry(10, 10);
+            planeMaterial = new THREE.MeshStandardMaterial({
+                color: 0xdddddd,
+                roughness: 0.8,
+                metalness: 0.1
+            });
+            plane = new THREE.Mesh(geometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.receiveShadow = true;
+            scene.add(plane);
+        }
+
+        function setupLights() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            // Directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 10, 7);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 20;
+            directionalLight.shadow.camera.left = -10;
+            directionalLight.shadow.camera.right = 10;
+            directionalLight.shadow.camera.top = 10;
+            directionalLight.shadow.camera.bottom = -10;
+            scene.add(directionalLight);
+
+            // Hemisphere light
+            const hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.5);
+            scene.add(hemisphereLight);
+        }
+
+        function setupUIControls() {
+            const glossiness = document.getElementById('glossiness');
+            const metalness = document.getElementById('metalness');
+            const roughness = document.getElementById('roughness');
+            const red = document.getElementById('red');
+            const green = document.getElementById('green');
+            const blue = document.getElementById('blue');
+
+            glossiness.addEventListener('input', () => {
+                appleMaterial.envMapIntensity = parseFloat(glossiness.value);
+            });
+
+            metalness.addEventListener('input', () => {
+                appleMaterial.metalness = parseFloat(metalness.value);
+            });
+
+            roughness.addEventListener('input', () => {
+                appleMaterial.roughness = parseFloat(roughness.value);
+            });
+
+            const updateColor = () => {
+                const r = parseInt(red.value) / 255;
+                const g = parseInt(green.value) / 255;
+                const b = parseInt(blue.value) / 255;
+                appleMaterial.color.setRGB(r, g, b);
+            };
+
+            red.addEventListener('input', updateColor);
+            green.addEventListener('input', updateColor);
+            blue.addEventListener('input', updateColor);
+        }
+
+        function randomizeSettings() {
+            document.getElementById('glossiness').value = Math.random();
+            document.getElementById('metalness').value = Math.random();
+            document.getElementById('roughness').value = Math.random();
+            document.getElementById('red').value = Math.floor(100 + Math.random() * 155);
+            document.getElementById('green').value = Math.floor(Math.random() * 100);
+            document.getElementById('blue').value = Math.floor(Math.random() * 100);
+
+            // Trigger updates
+            document.getElementById('glossiness').dispatchEvent(new Event('input'));
+            document.getElementById('metalness').dispatchEvent(new Event('input'));
+            document.getElementById('roughness').dispatchEvent(new Event('input'));
+            document.getElementById('red').dispatchEvent(new Event('input'));
+            document.getElementById('green').dispatchEvent(new Event('input'));
+            document.getElementById('blue').dispatchEvent(new Event('input'));
+        }
+
+        function resetSettings() {
+            document.getElementById('glossiness').value = 0.5;
+            document.getElementById('metalness').value = 0.2;
+            document.getElementById('roughness').value = 0.3;
+            document.getElementById('red').value = 200;
+            document.getElementById('green').value = 50;
+            document.getElementById('blue').value = 50;
+
+            // Trigger updates
+            document.getElementById('glossiness').dispatchEvent(new Event('input'));
+            document.getElementById('metalness').dispatchEvent(new Event('input'));
+            document.getElementById('roughness').dispatchEvent(new Event('input'));
+            document.getElementById('red').dispatchEvent(new Event('input'));
+            document.getElementById('green').dispatchEvent(new Event('input'));
+            document.getElementById('blue').dispatchEvent(new Event('input'));
+        }
+
+        function toggleControls() {
+            controlsVisible = !controlsVisible;
+            document.getElementById('controls').classList.toggle('hidden');
+            document.getElementById('toggleControls').classList.toggle('hidden');
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Slightly rotate apple based on mouse position
+            if (apple) {
+                apple.rotation.y = mouseX * 0.5;
+                apple.rotation.x = mouseY * 0.2;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Start the application
+        init();
+    </script>
+
+              
+          
+                
+          
+              
